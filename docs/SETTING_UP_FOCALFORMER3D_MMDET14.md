@@ -48,7 +48,10 @@ cp -r mmdet3d_v1.4_files/projects/mmdet3d_plugin      <mmdetection3d>/projects/
 cp -r mmdet3d_v1.4_files/projects/configs/focalformer3d <mmdetection3d>/projects/configs/
 ```
 
-No edits to mmdetection3d's own source are needed. FocalFormer3D is a **self-contained
+
+Please note that you need to change to mmcv_maximum_version = '2.3.0' inside mmdet3d/__init__.py. Same instruction also applies to PillarNest as well. 
+
+No other edits to mmdetection3d's own source are needed. FocalFormer3D is a **self-contained
 plugin**, everything registers through `custom_imports`. (PillarNeSt is the opposite;
 see [SETTING_UP_PILLARNEST_MMDET14.md](SETTING_UP_PILLARNEST_MMDET14.md).)
 
