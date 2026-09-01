@@ -81,6 +81,10 @@ cp -r ../mmdet3d_v1.4_files/configs/pillarnest                                  
 pip install -v -e .
 ```
 
+Please note that you need to change to mmcv_maximum_version = '2.3.0' inside mmdet3d/__init__.py. 
+
+
+
 ### 3.1 Register them
 
 Five files, four `__init__.py`. Nothing registers without this, and the failure is a
