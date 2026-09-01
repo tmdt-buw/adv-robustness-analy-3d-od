@@ -71,6 +71,15 @@ These results and visuals were generated using the evaluation code in *data_proc
 ## Installation
 Most information can be found in the docs/ folder
 
+#### If you are able to run and install MMDetection3d v1.0.0rc, mmcv-full v1.4.0 or older, continue with instructions below. If you have to run MMCV v2.x.x and MMDetection3d v1.1.0 or newer AND if you are not allowed to use conda/mamba environments, follow guides in
+
+[docs/VOXELIZATION_MMCV2.md](VOXELIZATION_MMCV2.md) \
+[docs/VOXELIZATION_MMCV2_USAGE.md](VOXELIZATION_MMCV2_USAGE) \
+[docs/SETTING_UP_PILLARNEST_MMDET14.md](SETTING_UP_PILLARNEST_MMDET14) \
+[docs/SETTING_UP_FOCALFORMER3D_MMDET14.md](SETTING_UP_FOCALFORMER3D_MMDET14) \
+[docs/GRADIENT_EXTRACTION.md](GRADIENT_EXTRACTION) \
+[mmdet3d_v1.4_files/slurm/README.md](mmdet3d_v1.4_files/slurm/README.md)
+
 ### Prerequisite: MMDetection3D v1.0.0rc
 
 Before installing this attack pipeline, you need to have MMDetection3D v1.0.0rc installed and properly configured. Please refer to the detailed [MMDetection3D Installation Guide (docs/INSTALL_MMD3D.md)](docs/INSTALL_MMD3D.md) for step-by-step instructions. If you plan to use all models or want to make sure that everything works, it is recommended to replace/add all files listed in the mmdetection3d folder with the corresponding files in your mmdetection3d installation. A list of the required changes and more information regarding the installation can be found in the [MMDetection3D Installation Guide](docs/INSTALL_MMD3D.md).
