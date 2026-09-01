@@ -96,12 +96,18 @@ lines, so a moved line counts twice.
 | `models/utils/ops/bev_pool/bev_pool_op.py` | 97 | 97 | **0** |
 | `models/utils/ops/bev_pool/__init__.py` | 24 | 24 | **0** |
 | `models/utils/ops/locatt_ops/__init__.py` | 27 | 27 | **0** |
+| `models/utils/ops/bev_pool/src/` and `models/utils/ops/locatt_ops/` CUDA and C++ sources (8 files: `.cu`, `.cuh`, `.cpp`, `.h`) | unchanged | unchanged | **0** |
 | `models/detectors/__init__.py`, `necks/__init__.py`, `assigners/__init__.py`, `pipelines/__init__.py`, `core/hook/__init__.py` | none | none | **0** |
 
 Two things worth reading off this table. The **custom CUDA ops did not change at all**.
 `bev_pool` and `locatt_ops` are byte-identical, because they are self-contained
-`autograd.Function`s that never touch an mm* API. And **the detector is where the work
-was**: `focalformer3d.py` is essentially a rewrite.
+`autograd.Function`s that never touch an mm* API. Both are JIT-compiled on first
+import by `torch.utils.cpp_extension.load`, so the `.cu`, `.cuh`, `.cpp` and `.h`
+sources next to them have to be present or the build fails before it starts:
+`bev_pool` raises `assert len(sources) > 0` and `locatt_ops` fails to compile.
+
+Second, **the detector is where the work was**: `focalformer3d.py` is essentially a
+rewrite.
 
 ### 3.1 The categories of change
 
