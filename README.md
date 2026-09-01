@@ -21,7 +21,7 @@ Currently, the following adversarial attack methods have been adapted to work wi
 * **[IoU-S Attack](https://github.com/haichen-ber/IoU-S-Attack)**
 * **FGSM & PGD** (own implementation)
 * **[LiDAttack](https://github.com/Cinderyl/LiDAttack.git)**
-* **[Non E2E](https://ietresearch.onlinelibrary.wiley.com/doi/10.1049/cvi2.70011)** (own implementation)
+* **[Non E2E](https://ietresearch.onlinelibrary.wiley.com/doi/10.1049/cvi2.70011)** (own implementation, please refer to Installation section below)
 
 
 It was tested using these models:
