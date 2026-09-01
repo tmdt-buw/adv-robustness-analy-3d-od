@@ -5,6 +5,7 @@ _base_ = [
     '../_base_/default_runtime.py'
 ]
 
+
 # 1. REMOVED ADVERSARIAL HOOKS
 # custom_hooks = [...] 
 
@@ -16,7 +17,7 @@ class_names = [
     'motorcycle', 'bicycle', 'pedestrian', 'traffic_cone'
 ]
 
-# Keep your custom imports for the PillarNest modules
+#your custom imports for the PillarNest modules
 custom_imports = dict(
     imports=[
         'mmdet3d.models.backbones.pillarnest_convnext',
