@@ -4,8 +4,7 @@ from os import path as osp
 import argparse
 from collections import defaultdict
 import torch
-from mmcv.parallel import DataContainer
-from mmdet3d.core.bbox.structures import LiDARInstance3DBoxes
+from mmdet3d.structures import LiDARInstance3DBoxes
 
 
 orig_filename = "orig_results"
@@ -138,10 +137,8 @@ def visualize_sample(data, adv_pc, gt_bboxes_3d, adv_res, orig_res, save_path, o
     compare_pc(out_dir, orig_filename, adv_filename, mode=attack, verbose=3)
 
 def unwrap_data(data):
-    """Recursively unwrap DataContainers into their raw content."""
-    if isinstance(data, DataContainer):
-        return unwrap_data(data.data)
-    elif isinstance(data, dict):
+    """Recursively unwrap nested data structures into their raw content."""
+    if isinstance(data, dict):
         return {k: unwrap_data(v) for k, v in data.items()}
     elif isinstance(data, list):
         return [unwrap_data(v) for v in data]

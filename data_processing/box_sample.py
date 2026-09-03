@@ -1,5 +1,8 @@
 import numpy as np
-from utils import center_distance, velocity_l2, yaw_diff, attr_acc, scale_iou
+try:
+    from data_processing.utils import center_distance, velocity_l2, yaw_diff, attr_acc, scale_iou
+except ImportError:
+    from utils import center_distance, velocity_l2, yaw_diff, attr_acc, scale_iou
 import bisect
 import pandas as pd
 from scipy.spatial import cKDTree
@@ -8,8 +11,14 @@ from chamferdist import ChamferDistance
 dist_func = ChamferDistance()
 
 # Own imports
-from metrics import Precision, Recall, ASR, score_k, DDR
-from sample import Sample
+try:
+    from data_processing.metrics import Precision, Recall, ASR, score_k, DDR
+except ImportError:
+    from metrics import Precision, Recall, ASR, score_k, DDR
+try:
+    from data_processing.sample import Sample
+except ImportError:
+    from sample import Sample
 
 class BoxSample(Sample):
 

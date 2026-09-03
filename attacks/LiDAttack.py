@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 import torch
 import copy
-from mmdet3d.core.bbox import LiDARInstance3DBoxes
+from mmdet3d.structures import LiDARInstance3DBoxes
 import time
 
 class LiDAttack():

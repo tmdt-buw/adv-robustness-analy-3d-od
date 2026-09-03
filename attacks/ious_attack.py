@@ -3,9 +3,7 @@ import numpy as np
 import copy
 import math
 from torch.utils.data import DataLoader
-from mmcv.parallel import DataContainer
-from mmcv import Config
-from mmdet3d.core.bbox import BaseInstance3DBoxes
+from mmdet3d.structures.bbox_3d import BaseInstance3DBoxes
 import torch.optim as optim
 from chamferdist import ChamferDistance
 from pipeline_utils.utils import move_to_device
