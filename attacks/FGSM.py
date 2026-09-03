@@ -1,7 +1,7 @@
 import torch
 import copy
 from pipeline_utils.utils import unwrap_data, move_to_device
-from mmdet3d.structures.bbox_3d import BaseInstance3DBoxes
+from mmdet3d.core.bbox import BaseInstance3DBoxes
 
 
 

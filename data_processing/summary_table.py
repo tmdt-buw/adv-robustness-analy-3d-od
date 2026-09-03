@@ -1,17 +1,14 @@
 import pandas as pd
 from os import path as osp
-try:
-    from data_processing.sample import Sample
-    from data_processing.utils import iter_results_db
-except ImportError:
-    from sample import Sample
-    from utils import iter_results_db
+from sample import Sample
 import sqlite3
 import pickle
 import numpy as np
 import torch
 import time
 import os, glob, re
+
+from utils import iter_results_db
 
 class SummaryTable(object):
     
