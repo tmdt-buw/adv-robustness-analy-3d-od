@@ -3,13 +3,10 @@ import numpy as np
 from collections import defaultdict
 import torch
 import copy
-from mmdet3d.structures.bbox_3d import BaseInstance3DBoxes
+from mmdet3d.core.bbox import BaseInstance3DBoxes
 
 # Own imports
-try:
-    from data_processing.utils import max_recall_ind
-except ImportError:
-    from utils import max_recall_ind
+from utils import max_recall_ind
 
 # 1. Evaluation metrics based on Survey of Adversarial Methods in Autonomous driving (Gong et al. 2025)
 def mAP(data, min_recall = 0.1, min_precision=0.1):
