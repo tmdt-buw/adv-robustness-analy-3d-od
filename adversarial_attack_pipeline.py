@@ -1,25 +1,19 @@
 import os
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:64"
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True,max_split_size_mb:512")
 os.environ['FILAMENT_DISABLE_LOGGING'] = '1' #to remove some warnings (didnt work)
 from os import path as osp
 import argparse
-import mmcv
 import torch
 import numpy as np
 import pandas as pd
 import math
-from mmcv import Config
-from mmdet3d.datasets import build_dataset
-from mmdet3d.models import build_model
+from mmengine.config import Config
+from mmdet3d.registry import DATASETS, MODELS
 from mmdet3d.apis import init_model
-from mmdet3d.datasets import build_dataloader
-from mmdet3d.core.bbox.structures import LiDARInstance3DBoxes
-from mmcv.parallel import DataContainer
-from mmcv.runner import init_dist, get_dist_info
+from mmdet3d.structures import LiDARInstance3DBoxes
+from mmengine.dist import init_dist, get_dist_info
 from torch.utils.data.distributed import DistributedSampler
-from mmcv.parallel import MMDistributedDataParallel
-from mmdet3d.datasets import build_dataloader, build_dataset
-from mmdet3d.models import build_detector
+from mmengine.model import MMDistributedDataParallel
 import torch.distributed as dist
 import torch.optim as optim
 from itertools import islice
@@ -47,8 +41,13 @@ from pipeline_utils.db_util import init_db, check_available, save_res, progress,
 # CUDA OOM Bug analysis tools
 from GPUMemoryInspector import quick_gpu_diagnosis, GPUMemoryInspector, monitor_gpu_memory
 
+import sys
 # Path variables
-PATH_PREFIX = Path("/path/to/project")
+PATH_PREFIX = Path("/home/fzn38120/Projects/adv_data_aug/")
+# Ensure custom project plugins (like focalformer3d, pillarnest modules) are resolvable
+for p in [str(PATH_PREFIX / "mmdetection3d/projects"), str(PATH_PREFIX / "mmdetection3d")]:
+    if p not in sys.path:
+        sys.path.insert(0, p)
 SAVE_PATH = str(PATH_PREFIX / r"ECCV2026/visualizations")
 orig_filename = "orig_results"
 adv_filename = "adv_results"
@@ -58,7 +57,14 @@ point_cloud_range = [-51.2, -51.2, -5.0, 51.2, 51.2, 3.0]
 voxel_size = [0.1, 0.1, 0.2]
 
 
-def main(config=None, model_path=None, reduced=False, attack=None, preset=None, save_path=None, checkpoint=None, db_name="adversarial_attack.db", device='cuda:0', launcher=None):
+def main(config=None, model_path=None, reduced=False, attack=None, preset=None, save_path=None, checkpoint=None, db_name="adversarial_attack.db", device='cuda:0', launcher=None, data_root=None):
+    # H100/A100 optimizations
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    torch.set_float32_matmul_precision('high')
+    torch.backends.cuda.enable_flash_sdp(True)
+    torch.backends.cuda.enable_mem_efficient_sdp(True)
+
     # Distributed Launch variables
     distributed = False
     if launcher != None:
@@ -84,10 +90,10 @@ def main(config=None, model_path=None, reduced=False, attack=None, preset=None, 
 
     elif preset == "pillarnest":
         if reduced:
-            config = str(PATH_PREFIX / r"mmdetection3d/configs/pillarnest/pillarnest_nus_adv_red.py")
+            config = str(PATH_PREFIX / r"mmdetection3d/configs/pillarnest/pillarnest_large_nuscenes_adv_diff.py")
         else:
             config = str(PATH_PREFIX / r"mmdetection3d/configs/pillarnest/pillarnest_nus_adv.py")
-        model_path = str(PATH_PREFIX / r"mmdetection3d/checkpoints/pillarnest_base.pth")
+        model_path = str(PATH_PREFIX / r"mmdetection3d/pretrain_weight/pillarnest_base.pth")
         model_name = "Pillarnest"
         dataset_name = "NuScenes"
 
@@ -215,6 +221,14 @@ def main(config=None, model_path=None, reduced=False, attack=None, preset=None, 
         dist.barrier()
     
     cfg = Config.fromfile(config)
+    # Resolve data_root (CLI override, env var DATA_ROOT, or TMPDIR auto-detection)
+    resolved_data_root = data_root or os.environ.get('NUSCENES_DATA_ROOT') or os.environ.get('DATA_ROOT')
+    if not resolved_data_root and 'TMPDIR' in os.environ:
+        cand = os.path.join(os.environ['TMPDIR'], 'nuscenes')
+        if os.path.exists(cand):
+            resolved_data_root = cand
+    if resolved_data_root:
+        apply_data_root_override(cfg, resolved_data_root)
     # Set pc range and voxel size
     point_cloud_range = cfg.point_cloud_range
     voxel_size = cfg.voxel_size
@@ -223,7 +237,11 @@ def main(config=None, model_path=None, reduced=False, attack=None, preset=None, 
     generate_class_name_dict(cfg.class_names)
 
     cfg.model.pretrained = None
-    cfg.data.test.test_mode = True
+    # Support both v1.0 (cfg.data.test) and v1.4 (cfg.test_dataloader) layouts
+    if hasattr(cfg, 'data') and hasattr(cfg.data, 'test'):
+        cfg.data.test.test_mode = True
+    if hasattr(cfg, 'test_dataloader') and cfg.test_dataloader is not None:
+        cfg.test_dataloader.dataset.test_mode = True
 
     # Build model and dataset
     dataset, data_loader, model = load_model_and_dataset(cfg, model_path, device=device, distributed=distributed)
@@ -293,7 +311,11 @@ def main_iteration(model, model_name, attack, dataset_name, data_i, data_point, 
     # monitor_gpu_memory only inspects tensors and prints when cmm is True. Otherwise it does nothing
     with monitor_gpu_memory(inspector, f"Sample {(data_i*world_size)+rank} - Data Prep", cmm):
         data_point = move_to_device(data_point, device)
-        sample_token = data_point['img_metas'][0].data[0][0]['sample_idx']
+        if isinstance(data_point, dict) and 'data_samples' in data_point:
+            ds = data_point['data_samples'][0]
+            sample_token = getattr(ds, 'sample_idx', None) or ds.metainfo.get('sample_idx', None) or ds.metainfo.get('token', 0)
+        else:
+            sample_token = data_point['img_metas'][0].data[0][0]['sample_idx']
 
         available = check_available(db_path, attack, model_name, dataset_name, sample_token, worker_id)
 
@@ -390,34 +412,55 @@ def adversarial_attack(sample, model, attack, gt_bboxes3d, gt_labels_3d, device)
     return result, adv_pc
 
 
+
+def apply_data_root_override(cfg, data_root):
+    if not data_root:
+        return
+    data_root = str(data_root).rstrip('/') + '/'
+    if hasattr(cfg, 'data_root'):
+        cfg.data_root = data_root
+    if hasattr(cfg, 'test_dataloader') and cfg.test_dataloader is not None:
+        ds = cfg.test_dataloader.dataset
+        if hasattr(ds, 'data_root'):
+            ds.data_root = data_root
+    if hasattr(cfg, 'val_evaluator') and cfg.val_evaluator is not None:
+        ev = cfg.val_evaluator
+        if hasattr(ev, 'ann_file') and not os.path.isabs(ev.ann_file):
+            ev.ann_file = os.path.join(data_root, os.path.basename(ev.ann_file))
+
 def load_model_and_dataset(cfg, model_path, device='cuda:0', distributed=False):
-    # Build dataset
-    dataset = build_dataset(cfg.data.test)
+    from mmengine.registry import init_default_scope
+    from mmengine.dataset import DefaultSampler, pseudo_collate
+    from torch.utils.data import DataLoader
 
-    # Fix: Some custom datasets don't initialize `flag`, used by GroupSampler
-    if not hasattr(dataset, 'flag'):
-        dataset.flag = np.zeros(len(dataset), dtype=np.uint8)
+    init_default_scope('mmdet3d')
 
-    # Use DistributedSampler if distributed training is enabled
+    # Build dataset (support both v1.0 and v1.4 config layouts)
+    if hasattr(cfg, 'test_dataloader') and cfg.test_dataloader is not None:
+        dataset_cfg = cfg.test_dataloader.dataset
+    else:
+        dataset_cfg = cfg.data.test
+    dataset = DATASETS.build(dataset_cfg)
+
     # Build data loader
-    data_loader = build_dataloader(
-        dataset,
-        samples_per_gpu=1,
-        workers_per_gpu=0,
-        shuffle=False,
-        dist=distributed
-    )
+    if distributed:
+        from torch.utils.data.distributed import DistributedSampler
+        sampler = DistributedSampler(dataset, shuffle=False)
+    else:
+        sampler = DefaultSampler(dataset, shuffle=False)
+    data_loader = DataLoader(
+        dataset, batch_size=1, sampler=sampler,
+        num_workers=0, collate_fn=pseudo_collate)
 
     # Initialize model
     if model_path:
         mm_model = init_model(cfg, checkpoint=model_path, device=device)
     else:
-        mm_model = build_model(cfg.model, train_cfg=cfg.get('train_cfg'), test_cfg=cfg.get('test_cfg'))
+        mm_model = MODELS.build(cfg.model)
         mm_model.cfg = cfg
         mm_model = mm_model.to(device)
 
     mm_model.eval()
-    # Wrap model in DDP if needed
     if distributed:
         mm_model = mm_model.cuda()
     else:
@@ -456,6 +499,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Adversarial Attack Pipeline for mmdetection3d')
     parser.add_argument('--preset-model',dest="preset_model", default="custom", choices=model_preset_list, type=str.lower, help='Model Preset Path+Config from Code')
     parser.add_argument('--config', default=None, help='Path to config file')
+    parser.add_argument('--data-root', default=None, help='Path to dataset directory (e.g. /tmp/.../nuscenes/)')
     parser.add_argument('--reduced', default=False, action="store_true", help="Should the reduced version of the dataset be used instead of the whole dataset?")
     parser.add_argument('--lc-fusion', dest="lc_fusion", default=False, action="store_true", help="Use Fusion weights?")
     parser.add_argument('--model', default=None, help='Path to model checkpoints')
@@ -529,9 +573,9 @@ if __name__ == "__main__":
 
     # Has launcher when using multi gpu.
     if args.launcher:
-        main(args.config, args.model, args.reduced, args.attack, preset=args.preset_model, save_path = args.save_dir, checkpoint=args.checkpoint, launcher=args.launcher)
+        main(args.config, args.model, args.reduced, args.attack, preset=args.preset_model, save_path = args.save_dir, checkpoint=args.checkpoint, launcher=args.launcher, data_root=args.data_root)
     else:
-        main(args.config, args.model, args.reduced, args.attack, preset=args.preset_model, save_path = args.save_dir, checkpoint=args.checkpoint)
+        main(args.config, args.model, args.reduced, args.attack, preset=args.preset_model, save_path = args.save_dir, checkpoint=args.checkpoint, data_root=args.data_root)
 
     if debug:
         print("WARNING: DEBUG MODE ACTIVE!!! Your input parameters were ignored!")
