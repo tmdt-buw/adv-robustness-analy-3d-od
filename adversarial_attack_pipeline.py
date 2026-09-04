@@ -43,12 +43,9 @@ from GPUMemoryInspector import quick_gpu_diagnosis, GPUMemoryInspector, monitor_
 
 import sys
 # Path variables
-PATH_PREFIX = Path("/home/fzn38120/Projects/adv_data_aug/")
-# Ensure custom project plugins (like focalformer3d, pillarnest modules) are resolvable
-for p in [str(PATH_PREFIX / "mmdetection3d/projects"), str(PATH_PREFIX / "mmdetection3d")]:
-    if p not in sys.path:
-        sys.path.insert(0, p)
-SAVE_PATH = str(PATH_PREFIX / r"ECCV2026/visualizations")
+PATH_PREFIX = Path("/beegfs/krink/Projects/adv-robustness-analy-3d-od/")
+
+SAVE_PATH = str(PATH_PREFIX / r"Results/")
 orig_filename = "orig_results"
 adv_filename = "adv_results"
 
@@ -83,8 +80,10 @@ def main(config=None, model_path=None, reduced=False, attack=None, preset=None, 
         if reduced:
             config = str(PATH_PREFIX / r"mmdetection3d/configs/centerpoint_attacks/centerpoint_nus_adv_red.py")
         else:
-            config = str(PATH_PREFIX / r"mmdetection3d/configs/centerpoint_attacks/centerpoint_nus_adv.py")
-        model_path = str(PATH_PREFIX / r"mmdetection3d/checkpoints/centerpoint_01voxel_second_secfpn_circlenms_4x8_cyclic_20e_nus_20220810_030004-9061688e.pth")
+            #config = str(PATH_PREFIX / r"mmdetection3d/configs/centerpoint_attacks/centerpoint_nus_adv.py")
+            config = str(PATH_PREFIX / r"external_libs/mmdetection3d/configs/centerpoint/centerpoint_voxel01_second_secfpn_head-circlenms_8xb4-cyclic-20e_nus-3d.py")
+
+        model_path = str(PATH_PREFIX / r"checkpoints/centerpoint_01voxel_second_secfpn_circlenms_4x8_cyclic_20e_nus_20220810_030004-9061688e.pth")
         model_name = "Centerpoint"
         dataset_name = "NuScenes"
 
@@ -236,12 +235,8 @@ def main(config=None, model_path=None, reduced=False, attack=None, preset=None, 
     ious.set_voxel_size(voxel_size)
     generate_class_name_dict(cfg.class_names)
 
-    cfg.model.pretrained = None
-    # Support both v1.0 (cfg.data.test) and v1.4 (cfg.test_dataloader) layouts
-    if hasattr(cfg, 'data') and hasattr(cfg.data, 'test'):
-        cfg.data.test.test_mode = True
-    if hasattr(cfg, 'test_dataloader') and cfg.test_dataloader is not None:
-        cfg.test_dataloader.dataset.test_mode = True
+    if hasattr(cfg, 'model') and isinstance(cfg.model, dict) and 'pretrained' in cfg.model:
+        del cfg.model['pretrained']
 
     # Build model and dataset
     dataset, data_loader, model = load_model_and_dataset(cfg, model_path, device=device, distributed=distributed)
@@ -313,7 +308,13 @@ def main_iteration(model, model_name, attack, dataset_name, data_i, data_point, 
         data_point = move_to_device(data_point, device)
         if isinstance(data_point, dict) and 'data_samples' in data_point:
             ds = data_point['data_samples'][0]
-            sample_token = getattr(ds, 'sample_idx', None) or ds.metainfo.get('sample_idx', None) or ds.metainfo.get('token', 0)
+            sample_token = getattr(ds, 'sample_idx', None)
+            if sample_token is None and hasattr(ds, 'metainfo'):
+                sample_token = ds.metainfo.get('sample_idx', None)
+            if sample_token is None and hasattr(ds, 'metainfo'):
+                sample_token = ds.metainfo.get('token', None)
+            if sample_token is None:
+                sample_token = data_i
         else:
             sample_token = data_point['img_metas'][0].data[0][0]['sample_idx']
 
@@ -440,6 +441,20 @@ def load_model_and_dataset(cfg, model_path, device='cuda:0', distributed=False):
         dataset_cfg = cfg.test_dataloader.dataset
     else:
         dataset_cfg = cfg.data.test
+
+    # Ensure annotations are loaded for adversarial evaluation
+    dataset_cfg.test_mode = False
+    if hasattr(dataset_cfg, 'pipeline'):
+        has_load_anno = any(t.get('type') == 'LoadAnnotations3D' for t in dataset_cfg.pipeline)
+        if not has_load_anno:
+            insert_idx = min(2, len(dataset_cfg.pipeline))
+            dataset_cfg.pipeline.insert(insert_idx, dict(type='LoadAnnotations3D', with_bbox_3d=True, with_label_3d=True))
+        for step in dataset_cfg.pipeline:
+            if step.get('type') == 'Pack3DDetInputs':
+                keys = set(step.get('keys', ['points']))
+                keys.update(['points', 'gt_bboxes_3d', 'gt_labels_3d'])
+                step['keys'] = list(keys)
+
     dataset = DATASETS.build(dataset_cfg)
 
     # Build data loader
@@ -579,4 +594,3 @@ if __name__ == "__main__":
 
     if debug:
         print("WARNING: DEBUG MODE ACTIVE!!! Your input parameters were ignored!")
-

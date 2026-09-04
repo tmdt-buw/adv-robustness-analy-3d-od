@@ -54,13 +54,14 @@ class CenterPointWrapper(ModelWrapper):
         num_points = torch.cat(npoints_list, dim=0)
 
         # Keep gradients flowing through voxel features
-        voxels.requires_grad_(True)
+        if not voxels.requires_grad:
+            voxels.requires_grad_(True)
 
         voxel_features = self.model.pts_voxel_encoder(
             voxels, num_points, coors)
-        batch_size = coors[-1, 0].item() + 1
+        batch_size = (coors[-1, 0].item() + 1) if len(coors) > 0 else len(pts_list)
         x = self.model.pts_middle_encoder(voxel_features, coors, batch_size)
         x = self.model.pts_backbone(x)
         if self.model.with_pts_neck:
             x = self.model.pts_neck(x)
-        return [x]
+        return x if isinstance(x, (list, tuple)) else [x]

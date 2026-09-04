@@ -33,7 +33,7 @@ class Sample(object):
         self.fp_thresh = fp_thresh
         self.innout_thresh = innout_thresh
         self.gt_boxes = sample_result["gt_boxes"][0][0]
-        self.gt_labels = sample_result["gt_labels"][0][0]
+        self.gt_labels = [int(l.item()) if isinstance(l, torch.Tensor) else int(l) for l in sample_result["gt_labels"][0][0]]
         self.result = sample_result["result"][0]
         self.adv_result = sample_result["adv_result"][0]
         t0 = time.time()
@@ -66,14 +66,14 @@ class Sample(object):
         # Extract results
         pred_boxes = result["pts_bbox"]["boxes_3d"]
         pred_labels = result["pts_bbox"]["labels_3d"]
-        scores = [s.item() for s in result["pts_bbox"]["scores_3d"]]
+        scores = [float(s.item()) if isinstance(s, torch.Tensor) else float(s) for s in result["pts_bbox"]["scores_3d"]]
         # Compute score@k
         score_at_k = score_k(self.gt_boxes, pred_boxes, scores)
         # sort after highest confidence
         sorted_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
         # Reorder boxes and scores according to sorted indices
         sorted_boxes = [list(pred_boxes[i])[0] for i in sorted_indices]
-        sorted_labels = [pred_labels[i] for i in sorted_indices]
+        sorted_labels = [int(pred_labels[i].item()) if isinstance(pred_labels[i], torch.Tensor) else int(pred_labels[i]) for i in sorted_indices]
         sorted_scores = [scores[i] for i in sorted_indices]
         # Accumulators
         tp = []
@@ -123,14 +123,14 @@ class Sample(object):
                     match_data['trans_err'].append(center_distance(gt_box_match, box))
                     match_data['vel_err'].append(velocity_l2(gt_box_match, box))
                     iou = scale_iou(gt_box_match, box)
-                    match_data['scale_err'].append(1 - iou)
+                    match_data['scale_err'].append(1.0 - iou)
                     match_data['iou'].append(iou)
 
                     # Barrier orientation is only determined up to 180 degree. (For cones orientation is discarded later)
-                    period = np.pi if sorted_labels[idx] == 'barrier' else 2 * np.pi #TODO: Do I really keep this? the labels I currently use are numbers, not class names
+                    period = np.pi if sorted_labels[idx] == 9 else 2 * np.pi
                     match_data['orient_err'].append(yaw_diff(gt_box_match, box, period=period))
 
-                    match_data['attr_err'].append(1 - attr_acc(gt_box_match, box))
+                    match_data['attr_err'].append(1.0 - attr_acc(gt_box_match, box))
                     match_data['conf'].append(sorted_scores[idx])
                     match_data['gt_match'].append(match_gt_idx)
                     match_data['pred_class'].append(sorted_labels[idx])
@@ -213,14 +213,14 @@ class Sample(object):
         # Extract results
         pred_boxes = result["pts_bbox"]["boxes_3d"]
         pred_labels = result["pts_bbox"]["labels_3d"]
-        scores = [s.item() for s in result["pts_bbox"]["scores_3d"]]
+        scores = [float(s.item()) if isinstance(s, torch.Tensor) else float(s) for s in result["pts_bbox"]["scores_3d"]]
         # Compute score@k
         score_at_k = score_k(self.gt_boxes, pred_boxes, scores)
         # sort after highest confidence
         sorted_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
         # Reorder boxes and scores according to sorted indices
         sorted_boxes = [list(pred_boxes[i])[0] for i in sorted_indices]
-        sorted_labels = [pred_labels[i] for i in sorted_indices]
+        sorted_labels = [int(pred_labels[i].item()) if isinstance(pred_labels[i], torch.Tensor) else int(pred_labels[i]) for i in sorted_indices]
         sorted_scores = [scores[i] for i in sorted_indices]
         # Accumulators
         tp = []
@@ -253,15 +253,19 @@ class Sample(object):
                         if box_2.dim() == 1:
                             box_2 = box_2.unsqueeze(0)
                         this_iou = bbox_overlaps_3d(box_1, box_2, coordinate='lidar')
+                        if isinstance(this_iou, torch.Tensor):
+                            this_iou = float(this_iou.squeeze().item())
+                        else:
+                            this_iou = float(this_iou)
                     else:
-                        this_iou = 0
+                        this_iou = 0.0
                     # store errors for each candidate
                     trans_err = center_distance(gt_box, box)
                     vel_err = velocity_l2(gt_box, box)
-                    scale_err = 1 - scale_iou(gt_box, box)
+                    scale_err = 1.0 - scale_iou(gt_box, box)
                     period = np.pi if sorted_labels[idx] == 9 else 2 * np.pi # 9 is barrier
                     orient_err = yaw_diff(gt_box, box, period=period)
-                    attr_err = 1 - attr_acc(gt_box, box)
+                    attr_err = 1.0 - attr_acc(gt_box, box)
                     candidates.append({
                         "gt_id": gt_idx, 
                         "dist_xy": this_distance, 
@@ -309,9 +313,10 @@ class Sample(object):
         t0 = time.time()
  
         # self.chamfer_dist = 0.0
-        self.chamfer_dist = dist_func(self.adv_points[:, :3][None,:,:].cuda(), self.points[:, :3][None,:,:].cuda())
+        dist_out = dist_func(self.adv_points[:, :3][None,:,:].cuda(), self.points[:, :3][None,:,:].cuda())
+        self.chamfer_dist = float(dist_out.item()) if isinstance(dist_out, torch.Tensor) else float(dist_out)
         if self.verbose >= 3:
-            print(f"Chamfer Distance: {self.chamferdist}")
+            print(f"Chamfer Distance: {self.chamfer_dist}")
 
         if self.verbose >=4:
             print(f"[Sample] Chamf dist computed in {time.time()-t0:.1f}s", flush = True)
@@ -322,7 +327,7 @@ class Sample(object):
             self.adv_data = self.prep_result(self.adv_result, threshold=self.dist_thresh)
             self.compute_metrics()
             self.points_per_obj, self.inner_points, self.outer_points, self.outer_boxes, self.inner_boxes = self.extraction(self.points)
-            self.adv_points_per_obj, self.adv_inner_points, self.adv_outer_points, self.adv_outer_points, self.adv_outer_boxes, self.adv_inner_boxes = self.extraction(self.adv_points)
+            self.adv_points_per_obj, self.adv_inner_points, self.adv_outer_points, self.adv_outer_boxes, self.adv_inner_boxes = self.extraction(self.adv_points)
             self.dist_to_car = self.get_dist_to_car()
         t0 = time.time()
         table_data = {
@@ -331,7 +336,7 @@ class Sample(object):
             "num_gt": len(self.gt_labels),
             "num_missed_gt": len(self.gt_labels)-sum(self.data["tp"]),
             "adv_num_missed_gt": len(self.gt_labels)-sum(self.adv_data["tp"]),
-            "distinct_classes": len(set(self.gt_labels)),
+            "distinct_classes": len(set(int(x) for x in self.gt_labels)),
             "num_fp": sum(self.data["fp"]), # Model data
             "num_tp": sum(self.data["tp"]),
             "adv_num_fp": sum(self.adv_data["fp"]),
@@ -342,17 +347,17 @@ class Sample(object):
             "adv_yaw_error_change": self.avg(self.adv_data["match_data"]["trans_err"]),
             "adv_scale_error_change": self.avg(self.adv_data["match_data"]["scale_err"]),
             # "label_error_change": self.data["match_data"]["label_error_change"],
-            "asr": self.asr, # Metrics
-            "ddr": self.ddr,
+            "asr": float(self.asr) if isinstance(self.asr, (torch.Tensor, np.generic)) else self.asr,
+            "ddr": float(self.ddr) if isinstance(self.ddr, (torch.Tensor, np.generic)) else self.ddr,
             "chamfer_dist": self.chamfer_dist,
-            "recall": self.recall,
-            "precision": self.precision,
-            "adv_recall": self.adv_recall,
-            "adv_precision": self.adv_precision,
-            "score@0.1": self.data["score@k"][0.1], # TODO: Do I keep the non adv score@k? never used in papers, but might be nice for calculating the difference
-            "score@0.5": self.data["score@k"][0.5],
-            "adv_score@0.1": self.adv_data["score@k"][0.1],
-            "adv_score@0.5": self.adv_data["score@k"][0.5],
+            "recall": float(self.recall) if self.recall is not None else None,
+            "precision": float(self.precision) if self.precision is not None else None,
+            "adv_recall": float(self.adv_recall) if self.adv_recall is not None else None,
+            "adv_precision": float(self.adv_precision) if self.adv_precision is not None else None,
+            "score@0.1": float(self.data["score@k"][0.1]) if 0.1 in self.data["score@k"] else None,
+            "score@0.5": float(self.data["score@k"][0.5]) if 0.5 in self.data["score@k"] else None,
+            "adv_score@0.1": float(self.adv_data["score@k"][0.1]) if 0.1 in self.adv_data["score@k"] else None,
+            "adv_score@0.5": float(self.adv_data["score@k"][0.5]) if 0.5 in self.adv_data["score@k"] else None,
         }
         self.table_entry = table_data
         if self.verbose >=4:
@@ -366,15 +371,15 @@ class Sample(object):
             box_data = {
                 "sample_id": self.name,
                 "gt_box_id": i,
-                "class": self.gt_labels[i], 
-                "pred_class":pred_class , 
-                "conf": pred_conf, 
-                "adv_pred_class": adv_class, 
-                "adv_conf": adv_conf, 
-                "iou": iou,
-                "adv_iou": adv_iou,
+                "class": int(self.gt_labels[i].item()) if isinstance(self.gt_labels[i], torch.Tensor) else int(self.gt_labels[i]), 
+                "pred_class": int(pred_class.item()) if isinstance(pred_class, torch.Tensor) else (int(pred_class) if pred_class is not None else None), 
+                "conf": float(pred_conf.item()) if isinstance(pred_conf, torch.Tensor) else (float(pred_conf) if pred_conf is not None else None), 
+                "adv_pred_class": int(adv_class.item()) if isinstance(adv_class, torch.Tensor) else (int(adv_class) if adv_class is not None else None), 
+                "adv_conf": float(adv_conf.item()) if isinstance(adv_conf, torch.Tensor) else (float(adv_conf) if adv_conf is not None else None), 
+                "iou": float(iou.item()) if isinstance(iou, torch.Tensor) else (float(iou) if iou is not None else None), 
+                "adv_iou": float(adv_iou.item()) if isinstance(adv_iou, torch.Tensor) else (float(adv_iou) if adv_iou is not None else None), 
                 "attack_success": self.attack_success(pred_conf, adv_conf, thresh = self.fp_thresh),
-                "distance_car": self.dist_to_car[i], 
+                "distance_car": float(self.dist_to_car[i].item()) if isinstance(self.dist_to_car[i], torch.Tensor) else float(self.dist_to_car[i]), 
                 "num_points": len(self.points_per_obj[i]), 
                 "adv_num_points": len(self.adv_points_per_obj[i]), 
                 "%_obj_points_change": self.diff_pc(self.points_per_obj[i], self.adv_points_per_obj[i], change_threshold=0.05),
@@ -382,13 +387,12 @@ class Sample(object):
                 "%_outer_points_change": self.diff_pc(self.outer_points[i], self.adv_outer_points[i], change_threshold=0.05),
                 "amt_inner_points": len(self.inner_points[i]),
                 "amt_outer_points": len(self.outer_points[i]),
-                # "occluded": False, #TODO: PROBLEM: need to look at training data (and Waymo does not have it at all)
-                "yaw_err": yaw_err, 
-                "adv_yaw_err": adv_yaw_err,
-                "trans_err": trans_err, 
-                "adv_trans_err": adv_trans_err,
-                "scale_err": scale_err, #contains iou
-                "adv_scale_err": adv_scale_err,
+                "yaw_err": float(yaw_err.item()) if isinstance(yaw_err, torch.Tensor) else (float(yaw_err) if yaw_err is not None else None), 
+                "adv_yaw_err": float(adv_yaw_err.item()) if isinstance(adv_yaw_err, torch.Tensor) else (float(adv_yaw_err) if adv_yaw_err is not None else None), 
+                "trans_err": float(trans_err.item()) if isinstance(trans_err, torch.Tensor) else (float(trans_err) if trans_err is not None else None), 
+                "adv_trans_err": float(adv_trans_err.item()) if isinstance(adv_trans_err, torch.Tensor) else (float(adv_trans_err) if adv_trans_err is not None else None), 
+                "scale_err": float(scale_err.item()) if isinstance(scale_err, torch.Tensor) else (float(scale_err) if scale_err is not None else None), 
+                "adv_scale_err": float(adv_scale_err.item()) if isinstance(adv_scale_err, torch.Tensor) else (float(adv_scale_err) if adv_scale_err is not None else None), 
             }
             box_data_table.append(box_data)
         self.box_table = box_data_table
@@ -427,6 +431,8 @@ class Sample(object):
 
     def get_dist_to_car(self):
         boxes = self.gt_boxes
+        if len(boxes) == 0:
+            return torch.empty(0)
         centers = boxes.gravity_center  # shape: (num_boxes, 3)
 
         # distance from ego vehicle (LiDAR origin)
@@ -481,9 +487,19 @@ class Sample(object):
         """
         finds the number of unchanged points and returns 100% - %unchanged
         """
-        pc = points.detach().cpu().numpy()
-        adv_pc = adv_points.detach().cpu().numpy()
+        if isinstance(points, torch.Tensor):
+            pc = points.detach().cpu().numpy()
+        else:
+            pc = np.asarray(points)
+        if isinstance(adv_points, torch.Tensor):
+            adv_pc = adv_points.detach().cpu().numpy()
+        else:
+            adv_pc = np.asarray(adv_points)
         max_len = len(pc) if len(pc) >= len(adv_pc) else len(adv_pc)
+        if max_len == 0:
+            return 0.0
+        if len(pc) == 0 or len(adv_pc) == 0:
+            return 100.0
         # match points to find unchanged ones
         tree = cKDTree(pc)
         
@@ -502,7 +518,7 @@ class Sample(object):
                 used_point.add(i)
         ratio_matched = len(used_point) / max_len if max_len != 0 else 0
         percent_diff = 100 * (1-ratio_matched)
-        return percent_diff
+        return float(percent_diff)
 
     def diff_pc_points(self, points,
                     adv_points,
@@ -614,7 +630,7 @@ class Sample(object):
 
         percentage_changed = (num_changed / n0) * 100 if n0 > 0 else 0.0
         # print("percent changed:", percentage_changed)
-        return percentage_changed
+        return float(percentage_changed)
         # return np.vstack(changed_points)
 
     def diff_pc_list(self, points,
@@ -784,11 +800,3 @@ class Sample(object):
             outer_points_per_box.append(outer_points)
 
         return sampled_points_per_box, inner_points_per_box, outer_points_per_box, boxes, boxes_inner
-
-
-
-
-    
-
-
-

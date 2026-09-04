@@ -25,6 +25,7 @@ runs/
 env/
 .vscode/
 .idea/
+.aiassistant/
 
 # Compiled binaries & build artifacts
 *.o
@@ -34,3 +35,9 @@ env/
 .ninja_deps
 .ninja_log
 .DS_Store
+
+# External Libraries
+external_libs/
+ECCV2026/
+Results/
+slurm/

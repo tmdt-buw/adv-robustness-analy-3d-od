@@ -173,42 +173,42 @@ class SummaryTable(object):
             try:
                 # ---------- insert sample ----------
                 cur.execute("""
-                INSERT INTO samples (
-                    sample_id,
-                    pct_change, num_gt, num_missed_gt, adv_num_missed_gt, distinct_classes,
-                    num_fp, num_tp, adv_num_fp, adv_num_tp,
-                    yaw_error_change, scale_error_change,
-                    adv_yaw_error_change, adv_scale_error_change,
-                    asr, ddr, chamfer_dist,
-                    recall, precision, adv_recall, adv_precision,
-                    score_01, score_05, adv_score_01, adv_score_05
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """, (
-                self.to_sqlite(sample.table_entry["sample_id"]),
-                self.to_sqlite(sample.table_entry["%_change"]),
-                self.to_sqlite(sample.table_entry["num_gt"]),
-                self.to_sqlite(sample.table_entry["num_missed_gt"]),
-                self.to_sqlite(sample.table_entry["adv_num_missed_gt"]),
-                self.to_sqlite(sample.table_entry["distinct_classes"]),
-                self.to_sqlite(sample.table_entry["num_fp"]),
-                self.to_sqlite(sample.table_entry["num_tp"]),
-                self.to_sqlite(sample.table_entry["adv_num_fp"]),
-                self.to_sqlite(sample.table_entry["adv_num_tp"]),
-                self.to_sqlite(sample.table_entry["yaw_error_change"]),
-                self.to_sqlite(sample.table_entry["scale_error_change"]),
-                self.to_sqlite(sample.table_entry["adv_yaw_error_change"]),
-                self.to_sqlite(sample.table_entry["adv_scale_error_change"]),
-                self.to_sqlite(sample.table_entry["asr"]),
-                self.to_sqlite(sample.table_entry["ddr"]),
-                self.to_sqlite(sample.table_entry["chamfer_dist"]),
-                self.to_sqlite(sample.table_entry["recall"]),
-                self.to_sqlite(sample.table_entry["precision"]),
-                self.to_sqlite(sample.table_entry["adv_recall"]),
-                self.to_sqlite(sample.table_entry["adv_precision"]),
-                self.to_sqlite(sample.table_entry["score@0.1"]),
-                self.to_sqlite(sample.table_entry["score@0.5"]),
-                self.to_sqlite(sample.table_entry["adv_score@0.1"]),
-                self.to_sqlite(sample.table_entry["adv_score@0.5"]),
+                INSERT INTO samples (\
+                    sample_id,\
+                    pct_change, num_gt, num_missed_gt, adv_num_missed_gt, distinct_classes,\
+                    num_fp, num_tp, adv_num_fp, adv_num_tp,\
+                    yaw_error_change, scale_error_change,\
+                    adv_yaw_error_change, adv_scale_error_change,\
+                    asr, ddr, chamfer_dist,\
+                    recall, precision, adv_recall, adv_precision,\
+                    score_01, score_05, adv_score_01, adv_score_05\
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)\
+                """, (\
+                self.to_sqlite(sample.table_entry["sample_id"]),\
+                self.to_sqlite(sample.table_entry["%_change"]),\
+                self.to_sqlite(sample.table_entry["num_gt"]),\
+                self.to_sqlite(sample.table_entry["num_missed_gt"]),\
+                self.to_sqlite(sample.table_entry["adv_num_missed_gt"]),\
+                self.to_sqlite(sample.table_entry["distinct_classes"]),\
+                self.to_sqlite(sample.table_entry["num_fp"]),\
+                self.to_sqlite(sample.table_entry["num_tp"]),\
+                self.to_sqlite(sample.table_entry["adv_num_fp"]),\
+                self.to_sqlite(sample.table_entry["adv_num_tp"]),\
+                self.to_sqlite(sample.table_entry["yaw_error_change"]),\
+                self.to_sqlite(sample.table_entry["scale_error_change"]),\
+                self.to_sqlite(sample.table_entry["adv_yaw_error_change"]),\
+                self.to_sqlite(sample.table_entry["adv_scale_error_change"]),\
+                self.to_sqlite(sample.table_entry["asr"]),\
+                self.to_sqlite(sample.table_entry["ddr"]),\
+                self.to_sqlite(sample.table_entry["chamfer_dist"]),\
+                self.to_sqlite(sample.table_entry["recall"]),\
+                self.to_sqlite(sample.table_entry["precision"]),\
+                self.to_sqlite(sample.table_entry["adv_recall"]),\
+                self.to_sqlite(sample.table_entry["adv_precision"]),\
+                self.to_sqlite(sample.table_entry["score@0.1"]),\
+                self.to_sqlite(sample.table_entry["score@0.5"]),\
+                self.to_sqlite(sample.table_entry["adv_score@0.1"]),\
+                self.to_sqlite(sample.table_entry["adv_score@0.5"]),\
                 ))
 
             except sqlite3.IntegrityError:
@@ -319,8 +319,71 @@ class SummaryTable(object):
             print("Final pred_box_candidates:", cur.fetchone()[0])
         print(f"=" * 60)
         
+        # ---------- Attack Overview Summary ----------
+        self.print_attack_overview(conn)
+
         conn.close()
 
+    @staticmethod
+    def print_attack_overview(db):
+        """
+        Queries the created SQLite database and prints a brief overview of attack performance,
+        focusing primarily on ASR (Attack Success Rate), DDR, Recall change, and point perturbations.
+        """
+        close_on_finish = False
+        if isinstance(db, str):
+            conn = sqlite3.connect(db)
+            close_on_finish = True
+        else:
+            conn = db
+
+        cur = conn.cursor()
+        try:
+            cur.execute("""
+                SELECT 
+                    COUNT(*) as total_boxes,
+                    SUM(CASE WHEN attack_success = 1 THEN 1 ELSE 0 END) as successful_attacks,
+                    SUM(CASE WHEN attack_success = 0 THEN 1 ELSE 0 END) as failed_attacks,
+                    SUM(CASE WHEN attack_success = -1 THEN 1 ELSE 0 END) as undetected_boxes
+                FROM boxes;
+            """)
+            b_total, b_succ, b_fail, b_undet = cur.fetchone()
+            b_succ = b_succ or 0
+            b_fail = b_fail or 0
+            b_undet = b_undet or 0
+            b_attacked = b_succ + b_fail
+            box_asr = (b_succ / b_attacked * 100.0) if b_attacked > 0 else 0.0
+
+            cur.execute("""
+                SELECT 
+                    AVG(CASE WHEN asr >= 0 THEN asr END) * 100.0 as mean_asr,
+                    AVG(CASE WHEN ddr >= 0 THEN ddr END) as mean_ddr,
+                    AVG(CASE WHEN recall >= 0 THEN recall END) * 100.0 as mean_clean_recall,
+                    AVG(CASE WHEN adv_recall >= 0 THEN adv_recall END) * 100.0 as mean_adv_recall,
+                    AVG(CASE WHEN pct_change >= 0 THEN pct_change END) as mean_pct_change
+                FROM samples;
+            """)
+            sample_asr, sample_ddr, clean_rec, adv_rec, mean_pt_change = cur.fetchone()
+
+            print("\n" + "=" * 60)
+            print("                 ATTACK EVALUATION OVERVIEW")
+            print("=" * 60)
+            print(f"Overall Box-level ASR : {box_asr:6.2f}% ({b_succ}/{b_attacked} detected boxes suppressed)")
+            if sample_asr is not None:
+                print(f"Mean Sample-level ASR : {sample_asr:6.2f}%")
+            if sample_ddr is not None:
+                print(f"Mean DDR (Conf Drop)  : {sample_ddr:6.4f}")
+            if clean_rec is not None and adv_rec is not None:
+                print(f"Recall (Clean -> Adv) : {clean_rec:6.2f}% -> {adv_rec:6.2f}%")
+            if mean_pt_change is not None:
+                print(f"Mean Point Perturb.   : {mean_pt_change:6.2f}%")
+            print(f"Total Ground Truths   : {b_total} ({b_attacked} detected clean, {b_undet} un-detected)")
+            print("=" * 60 + "\n", flush=True)
+        except Exception as e:
+            print(f"Could not print attack overview: {e}", flush=True)
+        finally:
+            if close_on_finish:
+                conn.close()
 
     def to_sqlite(self, val):
         if val is None:
@@ -339,6 +402,3 @@ class SummaryTable(object):
         if isinstance(val, np.bool_):
             return int(val)
         raise TypeError(f"Unsupported type for SQLite: {type(val)} -> {val}")
-
-
-

@@ -151,6 +151,8 @@ def move_to_device(data, device):
     """Recursively move tensors to the device."""
     if isinstance(data, torch.Tensor):
         return data.to(device)
+    elif hasattr(data, 'to') and callable(data.to):
+        return data.to(device)
     elif isinstance(data, dict):
         return {k: move_to_device(v, device) for k, v in data.items()}
     elif isinstance(data, list):
@@ -167,6 +169,9 @@ def move_to_cpu_and_detach(obj):
     """
     if isinstance(obj, torch.Tensor):
         return obj.detach().cpu()
+    elif hasattr(obj, 'cpu') and callable(obj.cpu):
+        res = obj.cpu()
+        return res.detach() if hasattr(res, 'detach') and callable(res.detach) else res
     elif isinstance(obj, dict):
         return {k: move_to_cpu_and_detach(v) for k, v in obj.items()}
     elif isinstance(obj, list):
@@ -175,5 +180,3 @@ def move_to_cpu_and_detach(obj):
         return tuple(move_to_cpu_and_detach(v) for v in obj)
     else:
         return obj  # leave non-tensors as-is
-
-        

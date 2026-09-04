@@ -51,11 +51,15 @@ echo "copying data.."
 
 echo "load env"
 module load 2023a
+source /beegfs/krink/miniconda3/bin/activate mmdet3d
 date
 echo "starting run.."
 
-cd /path/to/ECCV2026/
+cd /beegfs/krink/Projects/adv-robustness-analy-3d-od
+
 python data_processing/visualize.py \
-    --db-path /path/to/results/centerpoint/iou_detachment/adversarial_attack.db \
-    --samples 01a7d01c014f406f87b8fe11976c3d0a \
+    --db-path /beegfs/krink/Projects/adv-robustness-analy-3d-od/Results/debug/Centerpoint/NuScenes/iou_detachment/run_2026-09-04_14-33-49/adversarial_attack.db \
+    --output /beegfs/krink/Projects/adv-robustness-analy-3d-od/Results/debug/Centerpoint/NuScenes/iou_detachment/run_2026-09-04_14-33-49/visualizations \
+    --samples 0 \
+    --adv \
     --no-legend
