@@ -14,8 +14,7 @@ class ModelWrapper:
         gt_bboxes_3d, gt_labels_3d  # extracted separately
 
     v1.4 model API:
-        model.predict(batch_inputs_dict, batch_data_samples)
-        model.forward(batch_inputs_dict, batch_data_samples, mode='tensor')
+        model.test_step({'inputs': batch_inputs, 'data_samples': batch_data_samples})
     """
 
     def __init__(self, model):
@@ -27,8 +26,12 @@ class ModelWrapper:
     def predict(self, **kwargs) -> list:
         """Run inference (with NMS). Returns old-format result list."""
         batch_inputs, batch_data_samples = self._to_v14(kwargs)
+        batch_data_samples = [ds.clone() for ds in batch_data_samples]
         with torch.no_grad():
-            results = self.model.predict(batch_inputs, batch_data_samples)
+            results = self.model.test_step({
+                'inputs': batch_inputs,
+                'data_samples': batch_data_samples
+            })
         return self._from_v14(results)
 
     def dataset_type(self):
@@ -44,27 +47,41 @@ class ModelWrapper:
         """Convert v1.4 dataloader output to the pipeline's internal format.
 
         Args:
-            data_list: list of dicts from pseudo_collate (batch of 1)
+            data_list: dict or list of dicts from pseudo_collate (batch of 1)
             device: target device
 
         Returns:
             data - dict with 'points' and 'data_samples'
-            gt_bboxes_3d - ground-truth boxes
-            gt_labels_3d - ground-truth labels
+            gt_bboxes_3d - ground-truth boxes wrapped in [[...]]
+            gt_labels_3d - ground-truth labels wrapped in [[...]]
         """
-        sample = data_list[0]
+        if isinstance(data_list, dict):
+            sample = data_list
+        else:
+            sample = data_list[0]
+
         ds = sample['data_samples']
-        gt_bboxes_3d = ds.gt_instances_3d.bboxes_3d
-        gt_labels_3d = ds.gt_instances_3d.labels_3d
+        if isinstance(ds, (list, tuple)):
+            ds = ds[0]
+
+        gt_bboxes_3d = getattr(ds.gt_instances_3d, 'bboxes_3d', None) if hasattr(ds, 'gt_instances_3d') else None
+        gt_labels_3d = getattr(ds.gt_instances_3d, 'labels_3d', None) if hasattr(ds, 'gt_instances_3d') else None
+
+        if gt_bboxes_3d is not None and hasattr(gt_bboxes_3d, 'to'):
+            gt_bboxes_3d = gt_bboxes_3d.to(device)
+        if gt_labels_3d is not None and hasattr(gt_labels_3d, 'to'):
+            gt_labels_3d = gt_labels_3d.to(device)
 
         points = sample['inputs']['points']
+        if isinstance(points, (list, tuple)):
+            points = points[0]
         points = move_to_device(points, device)
 
         data = {
             'points': [[points]],           # attack code uses data['points'][0][0]
-            'data_samples': [ds.to(device)],
+            'data_samples': [ds.to(device) if hasattr(ds, 'to') else ds],
         }
-        return data, gt_bboxes_3d, gt_labels_3d
+        return data, [[gt_bboxes_3d]], [[gt_labels_3d]]
 
     def data_to_device(self, data, device):
         return move_to_device(data, device)

@@ -49,7 +49,8 @@ class FocalFormer3DWrapper(ModelWrapper):
         voxels = torch.cat(voxels_list, dim=0)
         coors  = torch.cat(coors_list, dim=0)
         num_points = torch.cat(npoints_list, dim=0)
-        voxels.requires_grad_(True)
+        if not voxels.requires_grad:
+            voxels.requires_grad_(True)
 
         voxel_features = self.model.pts_voxel_encoder(
             voxels, num_points, coors)

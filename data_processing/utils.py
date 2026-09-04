@@ -3,6 +3,10 @@ import torch
 import math
 import sqlite3
 import pickle
+import os
+import glob
+import re
+import time
     
 def max_recall_ind(confidence):
         """ Returns index of max recall achieved. """
@@ -26,7 +30,8 @@ def center_distance(gt_box, pred_box) -> float:
     """
     gt_center = gt_box[:2]
     pred_center = pred_box[:2]
-    return torch.norm(gt_center - pred_center)
+    dist = torch.norm(gt_center - pred_center)
+    return float(dist.item()) if isinstance(dist, torch.Tensor) else float(dist)
 
 def velocity_l2(gt_box, pred_box) -> float:
     """
@@ -37,7 +42,18 @@ def velocity_l2(gt_box, pred_box) -> float:
     :param pred_box: Predicted sample.
     :return: L2 distance.
     """
-    return np.linalg.norm(np.array(pred_box[5:]) - np.array(gt_box[5:]))
+    p = pred_box.detach().cpu().numpy() if isinstance(pred_box, torch.Tensor) else np.asarray(pred_box)
+    g = gt_box.detach().cpu().numpy() if isinstance(gt_box, torch.Tensor) else np.asarray(gt_box)
+    
+    if len(p) >= 9 and len(g) >= 9:
+        vel_p = p[7:9]
+        vel_g = g[7:9]
+    elif len(p) > 5 and len(g) > 5:
+        vel_p = p[5:]
+        vel_g = g[5:]
+    else:
+        return 0.0
+    return float(np.linalg.norm(vel_p - vel_g))
 
 def yaw_diff(gt_box, eval_box, period: float = 2*np.pi) -> float:
     """
@@ -48,11 +64,11 @@ def yaw_diff(gt_box, eval_box, period: float = 2*np.pi) -> float:
     :param period: Periodicity in radians for assessing angle difference.
     :return: Yaw angle difference in radians in [0, pi].
     """
-    yaw_gt = gt_box[6]
-    yaw_pred = eval_box[6]
+    yaw_gt = gt_box[6].item() if isinstance(gt_box[6], torch.Tensor) else float(gt_box[6])
+    yaw_pred = eval_box[6].item() if isinstance(eval_box[6], torch.Tensor) else float(eval_box[6])
     
     diff = (yaw_pred - yaw_gt + math.pi) % period - math.pi 
-    return abs(diff)
+    return float(abs(diff))
 
 def attr_acc(gt_box, pred_box) -> float:
     """
@@ -89,8 +105,17 @@ def scale_iou(sample_annotation, sample_result) -> float:
     # Validate inputs.
     sa_size = sample_annotation[3:6]
     sr_size = sample_result[3:6]
-    assert all(sa_size > 0), 'Error: sample_annotation sizes must be >0.'
-    assert all(sr_size > 0), 'Error: sample_result sizes must be >0.'
+    if isinstance(sa_size, torch.Tensor):
+        sa_size = sa_size.float()
+    else:
+        sa_size = torch.as_tensor(sa_size, dtype=torch.float)
+    if isinstance(sr_size, torch.Tensor):
+        sr_size = sr_size.float()
+    else:
+        sr_size = torch.as_tensor(sr_size, dtype=torch.float)
+
+    assert (sa_size > 0).all(), 'Error: sample_annotation sizes must be >0.'
+    assert (sr_size > 0).all(), 'Error: sample_result sizes must be >0.'
 
     # Compute IoU
     min_wlh = torch.min(sa_size, sr_size)
@@ -100,7 +125,7 @@ def scale_iou(sample_annotation, sample_result) -> float:
     union = volume_annotation + volume_result - intersection
     iou = intersection / union
 
-    return iou
+    return float(iou.item()) if isinstance(iou, torch.Tensor) else float(iou)
 
 def cummean(x: np.array) -> np.array:
     """
