@@ -42,8 +42,6 @@ class PointPillarWrapper(ModelWrapper):
         voxels = torch.cat(voxels_list, dim=0)
         coors  = torch.cat(coors_list, dim=0)
         num_points = torch.cat(npoints_list, dim=0)
-        if not voxels.requires_grad:
-            voxels.requires_grad_(True)
 
         voxel_features = self.model.pts_voxel_encoder(
             voxels, num_points, coors, None, None)

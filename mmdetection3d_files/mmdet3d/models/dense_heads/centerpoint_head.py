@@ -698,7 +698,8 @@ class CenterHead(BaseModule):
             for k in rets[0][i].keys():
                 if k == 'bboxes':
                     bboxes = torch.cat([ret[i][k] for ret in rets])
-                    bboxes[:, 2] = bboxes[:, 2] - bboxes[:, 5] * 0.5
+                    bboxes_z = bboxes[:, 2:3] - bboxes[:, 5:6] * 0.5
+                    bboxes = torch.cat([bboxes[:, :2], bboxes_z, bboxes[:, 3:]], dim=-1)
                     bboxes = img_metas[i]['box_type_3d'](
                         bboxes, self.bbox_coder.code_size)
                 elif k == 'scores':
@@ -706,7 +707,7 @@ class CenterHead(BaseModule):
                 elif k == 'labels':
                     flag = 0
                     for j, num_class in enumerate(self.num_classes):
-                        rets[j][i][k] += flag
+                        rets[j][i][k] = rets[j][i][k] + flag
                         flag += num_class
                     labels = torch.cat([ret[i][k].int() for ret in rets])
             ret_list.append([bboxes, scores, labels])
