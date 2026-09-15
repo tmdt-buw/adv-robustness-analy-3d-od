@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-from model_wrappers.model_wrapper import ModelWrapper
+from model_wrappers.model_wrapper import ModelWrapper, differentiable_voxelize
 
 
 class FocalFormer3DWrapper(ModelWrapper):
@@ -38,10 +38,13 @@ class FocalFormer3DWrapper(ModelWrapper):
 
     def _extract_pts_feat(self, pts_list):
         """Voxelize + encode with gradient tracking."""
-        voxel_layer = self.model.data_preprocessor.voxel_layer
+        voxel_layer = getattr(self.model, 'pts_voxel_layer', None)
+        if voxel_layer is None and hasattr(self.model, 'data_preprocessor'):
+            voxel_layer = getattr(self.model.data_preprocessor, 'voxel_layer', None)
+
         voxels_list, coors_list, npoints_list = [], [], []
         for i, pts in enumerate(pts_list):
-            v, c, n = voxel_layer(pts)
+            v, c, n = differentiable_voxelize(voxel_layer, pts)
             coors_list.append(F.pad(c, (1, 0), mode='constant', value=i))
             voxels_list.append(v)
             npoints_list.append(n)
@@ -52,7 +55,7 @@ class FocalFormer3DWrapper(ModelWrapper):
 
         voxel_features = self.model.pts_voxel_encoder(
             voxels, num_points, coors)
-        batch_size = coors[-1, 0].item() + 1
+        batch_size = (coors[-1, 0].item() + 1) if len(coors) > 0 else len(pts_list)
         x = self.model.pts_middle_encoder(voxel_features, coors, batch_size)
         x = self.model.pts_backbone(x)
         if self.model.with_pts_neck:

@@ -178,4 +178,10 @@ dependencies:
     - wcwidth==0.8.1
     - widgetsnbextension==4.0.15
     - yapf==0.43.0
+<<<<<<< Updated upstream
     - zipp==4.1.0
+=======
+    - zipp==4.1.0
+
+prefix: "/rwthfs/rz/cluster/home/fzn38120/miniforge3/envs/mmdet3d"
+>>>>>>> Stashed changes

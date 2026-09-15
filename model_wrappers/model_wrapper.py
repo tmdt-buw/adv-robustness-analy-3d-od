@@ -1,5 +1,24 @@
 from pipeline_utils.utils import move_to_device
 import torch
+from mmcv.ops.voxelize import _voxelization_func
+
+
+def differentiable_voxelize(voxel_layer, pts):
+    """Voxelize a single point cloud tensor preserving autograd graph."""
+    if isinstance(voxel_layer.max_voxels, (tuple, list)):
+        max_voxels = voxel_layer.max_voxels[0] if voxel_layer.training else voxel_layer.max_voxels[1]
+    else:
+        max_voxels = voxel_layer.max_voxels
+
+    return _voxelization_func(
+        pts,
+        voxel_layer.voxel_size,
+        voxel_layer.point_cloud_range,
+        max_points=voxel_layer.max_num_points,
+        max_voxels=max_voxels,
+        deterministic=voxel_layer.deterministic,
+        differentiable=True,
+    )
 
 
 class ModelWrapper:
