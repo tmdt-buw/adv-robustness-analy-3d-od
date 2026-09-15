@@ -14,6 +14,7 @@
 #conda activate mmdet3d
 
 module unload CUDA
+module load 2023a
 module load CUDA/12.4.0
 
 export MMCV_WITH_OPS=1
